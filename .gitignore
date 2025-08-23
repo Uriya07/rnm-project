@@ -1,0 +1,25 @@
+# Python cache
+__pycache__/
+*.pyc
+
+# Virtual environment
+.venv/
+
+# Editor/OS junk
+.vscode/
+.DS_Store
+
+# Output (remove this line if you DO want out.csv in GitHub)
+out.csv
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.log
+
+# Minikube binary
+minikube-linux-amd64
+
+# Other
+*.swp
