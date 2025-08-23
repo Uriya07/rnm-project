@@ -1,0 +1,34 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rnm-api
+  labels:
+    app: rnm-api
+spec:
+  replicas: 2  # run 2 Pods for higher availability
+  selector:
+    matchLabels:
+      app: rnm-api
+  template:
+    metadata:
+      labels:
+        app: rnm-api
+    spec:
+      containers:
+        - name: rnm-api
+          image: rnm-api:latest        # image you built inside minikube's Docker
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8000      # our app listens on 8000
+          readinessProbe:              # is app ready to serve traffic?
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:               # if unhealthy, restart container
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 20
