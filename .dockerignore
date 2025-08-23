@@ -1,0 +1,12 @@
+# Python cache / venv
+__pycache__/
+*.pyc
+.venv/
+
+# Git / editor junk
+.git/
+.vscode/
+.DS_Store
+
+# Local outputs
+out.csv
