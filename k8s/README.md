@@ -1,148 +1,56 @@
-# Kubernetes (Minikube) Guide
+# k8s Manifests
 
-This guide shows how to run the **Rick & Morty Filter API** on a local Kubernetes cluster using **Minikube**.
+This folder contains raw Kubernetes manifests for running the app on a local Minikube cluster:
 
-> All commands are intended to be run from the repository root (where `Dockerfile` and `k8s/` live).
+- `deployment.yaml`
+- `service.yaml`
+- `ingress.yaml` (optional but recommended with Minikube ingress addon)
 
----
+## Prerequisites
 
-## 1) Prerequisites
-- Docker Desktop installed and running
-- Minikube installed
-- kubectl available (Minikube installs it)
+- Docker Desktop or Docker Engine
+- Minikube
+- kubectl
 
-Verify:
-```bash
-docker --version
-minikube version
-kubectl version --client
-```
-
----
-
-## 2) Start Minikube
-```bash
-minikube start --driver=docker
-kubectl get nodes
-```
-You should see a single node named `minikube` in `Ready` state.
-
----
-
-## 3) Build the Docker image *inside* Minikube
-Minikube uses its own Docker daemon. Point your shell to it, then build:
+## Deploy
 
 ```bash
-# Use Minikube's Docker
-eval $(minikube docker-env)
+minikube start
 
-# Build the image for the API
-docker build -t rnm-api:latest .
+# On WSL/Windows users: fix kubeconfig server endpoint (first run only)
+MINIKUBE_IP=$(minikube ip)
+sed -Ei 's#https://127\.0\.0\.1:[0-9]+#https://'"$MINIKUBE_IP"':8443#g' "$HOME/.kube/config"
 
-# Optional: confirm it's there
-docker images | grep rnm-api
+# If using ingress (recommended):
+minikube addons enable ingress
+
+# Apply resources
+kubectl apply -f .
 ```
 
-> If you forget `eval $(minikube docker-env)` the cluster won't see your local image
-> and Pods may fail with `ImagePullBackOff`.
-
----
-
-## 4) Deploy to Kubernetes
-Apply the Deployment and Service manifests:
+## Verify
 
 ```bash
-kubectl apply -f k8s/deployment.yaml
-kubectl apply -f k8s/service.yaml
-
-# Watch until Pods are Ready
-kubectl get pods -w -l app=rnm-api   # Ctrl+C to exit
+kubectl get deploy,svc,ing -n default
+kubectl logs deploy/rnm-api -n default
 ```
 
----
-
-## 5) Access the service
-Easiest way:
-```bash
-minikube service rnm-api
-```
-This opens a browser or prints a URL you can use (usually a localhost URL).
-
-Useful endpoints:
-- `/`          – landing JSON message
-- `/health`    – health check (should return `{"ok": true}`)
-- `/characters`– filtered characters as JSON
-- `/csv`       – downloads `out.csv`
-
-Alternatively, use the NodePort manually:
+If you used an Ingress, obtain the Minikube IP and browse to the host configured in `ingress.yaml` (or use `curl`):
 ```bash
 minikube ip
-# Suppose it returns 192.168.49.2
-# Then browse: http://192.168.49.2:30080/health
 ```
 
-> On Windows/WSL with Docker driver, the localhost URL printed by `minikube service` is usually the most reliable.
+## Cleanup
 
----
-
-## 6) Typical dev loop (code → image → rollout)
-Whenever you change code:
 ```bash
-# 1) Make sure shell points to Minikube Docker
-eval $(minikube docker-env)
-
-# 2) Rebuild image
-docker build -t rnm-api:latest .
-
-# 3) Restart rollout
-kubectl rollout restart deployment/rnm-api
-
-# 4) Wait until new Pods are Ready
-kubectl rollout status deployment/rnm-api
+kubectl delete -f .
 ```
-
----
-
-## 7) Scaling (replicas)
-Change the number of Pods on the fly:
-```bash
-kubectl scale deployment/rnm-api --replicas=4
-kubectl get deploy rnm-api
-kubectl get pods -l app=rnm-api
-```
-
----
-
-## 8) Logs & troubleshooting
-```bash
-# Logs from all Pods
-kubectl logs -l app=rnm-api --tail=100
-
-# Describe resources for details
-kubectl describe deploy rnm-api
-kubectl describe svc rnm-api
-
-# Common issue: ImagePullBackOff
-# Fix: rebuild image *inside* Minikube Docker and restart the rollout:
-eval $(minikube docker-env)
-docker build -t rnm-api:latest .
-kubectl rollout restart deployment/rnm-api
-kubectl rollout status deployment/rnm-api
-```
-
----
-
-## 9) Cleanup
-```bash
-kubectl delete -f k8s/service.yaml
-kubectl delete -f k8s/deployment.yaml
-# or remove the entire cluster:
-minikube delete
-```
-
----
 
 ## Notes
-- The manifests use `readinessProbe` and `livenessProbe` on `/health` to ensure Pods are healthy.
-- `Service` is `NodePort` on `30080` for easy local access.
-- For production, consider using a `LoadBalancer` Service type (with `minikube tunnel`) or an Ingress.
+
+- Make sure the `image: uriya077/myapp:latest` in manifests matches your Docker Hub repository and tag.
+- For NodePort service testing without ingress:
+  ```bash
+  kubectl get svc
+  # then: curl http://$(minikube ip):<nodePort>/healthcheck
+  ```
