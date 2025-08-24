@@ -1,26 +1,17 @@
 pipeline {
   agent any
 
-  environment {
-    // Docker Hub image name. Change to your Docker Hub username/repo.
-    DOCKER_IMAGE = "uriya07/rnm-api"
-    // Short git commit for tagging
-    GIT_SHORT_SHA = "${env.GIT_COMMIT?.take(7)}"
-    // Kubernetes namespace
-    K8S_NAMESPACE = "default"
-    // Helm release name (must match templates if used as app label)
-    RELEASE = "rnm-api"
-    // Path to the Helm chart in this repo
-    CHART = "helm/rnm-api"
-  }
-
   options {
     timestamps()
-    ansiColor('xterm')
+  }
+
+  environment {
+    DOCKERHUB_CREDS = credentials('dockerhub')
+    IMAGE_NAME = 'uriya07/rnm-api'
+    CHART_DIR  = 'helm/rnm-api'
   }
 
   stages {
-
     stage('Checkout') {
       steps {
         checkout scm
@@ -29,50 +20,36 @@ pipeline {
 
     stage('Build Docker image') {
       steps {
-        sh '''
-          set -e
-          docker version
-          echo "Building image: $DOCKER_IMAGE:$GIT_SHORT_SHA"
-          docker build -t $DOCKER_IMAGE:$GIT_SHORT_SHA .
-          docker tag $DOCKER_IMAGE:$GIT_SHORT_SHA $DOCKER_IMAGE:latest
-        '''
-      }
-    }
-
-    stage('Push to Docker Hub') {
-      steps {
-        withCredentials([usernamePassword(credentialsId: 'dockerhub', usernameVariable: 'DH_USER', passwordVariable: 'DH_PASS')]) {
+        ansiColor('xterm') {
           sh '''
-            set -e
-            echo "$DH_PASS" | docker login -u "$DH_USER" --password-stdin
-            docker push $DOCKER_IMAGE:$GIT_SHORT_SHA
-            docker push $DOCKER_IMAGE:latest
+            docker build -t $IMAGE_NAME:$BUILD_NUMBER .
+            docker tag $IMAGE_NAME:$BUILD_NUMBER $IMAGE_NAME:latest
           '''
         }
       }
     }
 
-    stage('Deploy to Minikube with Helm') {
+    stage('Login & Push') {
       steps {
-        sh '''
-          set -e
-          kubectl version --client
-          helm version
-          kubectl config current-context
+        ansiColor('xterm') {
+          sh '''
+            echo "$DOCKERHUB_CREDS_PSW" | docker login -u "$DOCKERHUB_CREDS_USR" --password-stdin
+            docker push $IMAGE_NAME:$BUILD_NUMBER
+            docker push $IMAGE_NAME:latest
+          '''
+        }
+      }
+    }
 
-          # Deploy/upgrade with dynamic image tag
-          helm upgrade --install $RELEASE $CHART \
-            --namespace $K8S_NAMESPACE --create-namespace \
-            --set image.repository=$DOCKER_IMAGE \
-            --set image.tag=$GIT_SHORT_SHA
-
-          echo "Waiting for rollout..."
-          kubectl rollout status deploy/$RELEASE -n $K8S_NAMESPACE --timeout=120s
-          echo "Services:"
-          kubectl get svc -n $K8S_NAMESPACE
-          echo "Pods:"
-          kubectl get pods -n $K8S_NAMESPACE -l app.kubernetes.io/name=$RELEASE -o wide
-        '''
+    stage('Deploy to Minikube via Helm') {
+      steps {
+        ansiColor('xterm') {
+          sh '''
+            helm upgrade --install rnm-api $CHART_DIR \
+              --set image.repository=$IMAGE_NAME \
+              --set image.tag=$BUILD_NUMBER
+          '''
+        }
       }
     }
   }
@@ -80,7 +57,7 @@ pipeline {
   post {
     always {
       sh 'docker logout || true'
-      archiveArtifacts artifacts: '**/helm/**', onlyIfSuccessful: false
     }
   }
 }
+
